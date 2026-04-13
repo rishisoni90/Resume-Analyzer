@@ -9,6 +9,8 @@ The AI-Powered Resume Matcher is designed to solve a common challenge faced by j
 This tool leverages Natural Language Processing (NLP) to analyze resumes against job descriptions, calculate a match score, and intelligently enhance the resume to improve its chances of passing ATS screening — all while preserving the original formatting and structure.
 
 🚀 Key Features
+
+
 🔍 Resume & Job Description Analysis
 Extracts relevant keywords and phrases from both the resume and job description
 Uses NLP techniques to understand context, not just exact word matches

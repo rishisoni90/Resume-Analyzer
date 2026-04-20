@@ -704,8 +704,8 @@ function render(d){
         Candidate: <strong style="color:var(--text)">${d.name}</strong>
       </p>
       <div class="dl-row">
-        <a class="dl-btn dl-docx" href="/download/${encodeURIComponent(d.filename)}">📄 Download Word (.docx)</a>
-        <a class="dl-btn dl-pdf"  href="/download/${encodeURIComponent(d.pdf_filename)}">📕 Download PDF</a>
+        <a class="dl-btn dl-docx" href="/download/${encodeURIComponent(d.filename)}">📄 Download Preview (.docx)</a>
+        <a class="dl-btn dl-pdf"  href="/download/${encodeURIComponent(d.pdf_filename)}">📕 Download Preview (.pdf)</a>
       </div>
     </div>`;
   document.getElementById('results').style.display='block';
@@ -733,8 +733,123 @@ def analyze():
 
 @app.route('/download/<path:filename>')
 def download_file(filename):
-    # ✅ Block all downloads — showcase mode only
-    return jsonify({'error': 'Downloads disabled in free demo. Contact me to get full access.'}), 403
+    import fitz
+    from PIL import Image, ImageFilter, ImageDraw, ImageFont
+
+    path = os.path.join(app.config['OPTIMIZED_FOLDER'], filename)
+    if not os.path.exists(path):
+        return jsonify({'error': 'File not found'}), 404
+
+    # ── load font — works on Windows, Mac, Linux ─────────────
+    def load_fonts():
+        candidates_bold = [
+            "C:/Windows/Fonts/arialbd.ttf",
+            "C:/Windows/Fonts/calibrib.ttf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+            "/System/Library/Fonts/Helvetica.ttc",
+        ]
+        candidates_reg = [
+            "C:/Windows/Fonts/arial.ttf",
+            "C:/Windows/Fonts/calibri.ttf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+            "/System/Library/Fonts/Helvetica.ttc",
+        ]
+        def try_load(paths, size):
+            for p in paths:
+                try:
+                    return ImageFont.truetype(p, size)
+                except:
+                    continue
+            return ImageFont.load_default()
+
+        return (try_load(candidates_bold, 64),   # font_big
+                try_load(candidates_reg,  26),   # font_sm
+                try_load(candidates_reg,  20))   # font_xs
+
+    # ── blur + watermark stamp one PIL image ──────────────────
+    def stamp_image(img):
+        font_big, font_sm, font_xs = load_fonts()
+
+        # 1. Blur
+        img = img.filter(ImageFilter.GaussianBlur(radius=7))
+        W, H = img.size
+
+        # 2. Tiled diagonal stamp layer
+        stamp = Image.new('RGBA', (W, H), (0, 0, 0, 0))
+        sd    = ImageDraw.Draw(stamp)
+        msgs  = ["** DEMO VERSION **", "HIRE ME FIRST ;)"]
+        for y in range(-300, H + 300, 240):
+            for x in range(-300, W + 300, 480):
+                for i, msg in enumerate(msgs):
+                    sd.text((x, y + i * 100), msg,
+                            font=font_big, fill=(220, 30, 30, 55))
+        stamp = stamp.rotate(30, expand=False)
+        img   = Image.alpha_composite(img.convert('RGBA'), stamp)
+
+        # 3. Dark overlay to make watermark readable
+        overlay = Image.new('RGBA', (W, H), (0, 0, 0, 50))
+        img = Image.alpha_composite(img, overlay)
+
+        # 4. Bottom banner
+        draw     = ImageDraw.Draw(img)
+        banner_h = 88
+        draw.rectangle([0, H - banner_h, W, H], fill=(8, 8, 8, 240))
+        draw.text((W // 2, H - banner_h + 12),
+                  "Like what you see? You have great taste.",
+                  font=font_sm, fill=(255, 255, 255), anchor="mt")
+        draw.text((W // 2, H - banner_h + 50),
+                  "Hire me & you'll get the real thing  ->  rishisoni1945@gmail.com",
+                  font=font_xs, fill=(100, 180, 255), anchor="mt")
+
+        return img.convert('RGB')
+
+    # ── DOCX — blur the already-generated PDF twin instead ────
+    if filename.endswith('.docx'):
+        pdf_twin = os.path.join(app.config['OPTIMIZED_FOLDER'],
+                                filename.replace('.docx', '.pdf'))
+        if os.path.exists(pdf_twin):
+            source_path = pdf_twin
+        else:
+            # No PDF twin found — blur the DOCX by rendering pages as images
+            source_path = path
+
+        pdf_doc    = fitz.open(source_path)
+        out_images = []
+        for page in pdf_doc:
+            mat = fitz.Matrix(2.0, 2.0)
+            pix = page.get_pixmap(matrix=mat)
+            img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+            out_images.append(stamp_image(img))
+        pdf_doc.close()
+
+        output = io.BytesIO()
+        if out_images:
+            out_images[0].save(output, format='PDF', save_all=True,
+                               append_images=out_images[1:])
+        output.seek(0)
+        return send_file(output, as_attachment=True,
+                         download_name=f"DEMO_{filename.replace('.docx', '.pdf')}",
+                         mimetype='application/pdf')
+
+    # ── PDF — blur every page + stamp ────────────────────────
+    pdf_doc    = fitz.open(path)
+    out_images = []
+    for page in pdf_doc:
+        mat = fitz.Matrix(2.0, 2.0)
+        pix = page.get_pixmap(matrix=mat)
+        img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+        out_images.append(stamp_image(img))
+    pdf_doc.close()
+
+    output = io.BytesIO()
+    if out_images:
+        out_images[0].save(output, format='PDF', save_all=True,
+                           append_images=out_images[1:])
+    output.seek(0)
+
+    return send_file(output, as_attachment=True,
+                     download_name=f"DEMO_{filename}",
+                     mimetype='application/pdf')
 
 if __name__ == '__main__':
     print("\n  Resume Optimizer  →  http://localhost:5000\n")

@@ -733,12 +733,8 @@ def analyze():
 
 @app.route('/download/<path:filename>')
 def download_file(filename):
-    path = os.path.join(app.config['OPTIMIZED_FOLDER'], filename)
-    if not os.path.exists(path):
-        return jsonify({'error':'File not found'}), 404
-    mime = ('application/pdf' if filename.endswith('.pdf') else
-            'application/vnd.openxmlformats-officedocument.wordprocessingml.document')
-    return send_file(path, as_attachment=True, download_name=filename, mimetype=mime)
+    # ✅ Block all downloads — showcase mode only
+    return jsonify({'error': 'Downloads disabled in free demo. Contact me to get full access.'}), 403
 
 if __name__ == '__main__':
     print("\n  Resume Optimizer  →  http://localhost:5000\n")
